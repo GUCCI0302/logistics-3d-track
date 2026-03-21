@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>物流轨迹2D+3D联动可视化系统</title>
+  
+  <!-- 样式文件 -->
+  <link rel="stylesheet" href="css/main.css">
+  
+  <!-- Three.js Import Map -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  
+  <!-- ECharts CDN -->
+  <script src="https://cdn.bootcdn.net/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
+</head>
+<body>
+  <!-- 加载遮罩 -->
+  <div id="loader" class="loader-overlay">
+    <div class="spinner"></div>
+    <p class="loader-text">正在加载地图数据...</p>
+  </div>
+  
+  <!-- 主容器 -->
+  <div class="app-container">
+    <!-- 2D地图 -->
+    <div id="map2d"></div>
+    
+    <!-- 3D场景 -->
+    <div id="scene3d"></div>
+  </div>
+  
+  <!-- 主程序 -->
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

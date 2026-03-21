@@ -1,0 +1,516 @@
+/* 全局样式 */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  overflow: hidden;
+  background: #000;
+}
+
+/* 主容器 */
+.app-container {
+  display: flex;
+  width: 100vw;
+  height: 100vh;
+  position: relative;
+}
+
+/* 2D地图容器 */
+#map2d {
+  width: 50%;
+  height: 100%;
+  background: #f5f5f5;
+  position: relative;
+}
+
+/* 3D场景容器 */
+#scene3d {
+  width: 50%;
+  height: 100%;
+  background: #111;
+  position: relative;
+  overflow: hidden;
+}
+
+/* 加载遮罩 */
+.loader-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.9);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+  transition: opacity 0.5s ease;
+}
+
+.loader-overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.spinner {
+  width: 60px;
+  height: 60px;
+  border: 4px solid rgba(255, 255, 255, 0.1);
+  border-top-color: #1e90ff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loader-text {
+  color: #fff;
+  margin-top: 20px;
+  font-size: 16px;
+  letter-spacing: 2px;
+}
+
+/* 城市标签 */
+.city-label {
+  position: absolute;
+  color: #fff;
+  font-size: 14px;
+  font-weight: bold;
+  pointer-events: none;
+  text-shadow: 2px 2px 4px #000, 0 0 10px rgba(0, 0, 0, 0.8);
+  background: linear-gradient(135deg, rgba(255, 69, 0, 0.9), rgba(255, 140, 0, 0.9));
+  padding: 6px 12px;
+  border-radius: 6px;
+  white-space: nowrap;
+  z-index: 100;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5), 0 0 20px rgba(255, 69, 0, 0.3);
+  letter-spacing: 1px;
+}
+
+/* 车辆标签 */
+.vehicle-label {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  pointer-events: none;
+  transform: translate(-50%, -100%);
+  margin-top: -15px;
+  z-index: 101;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.vehicle-label .label-name {
+  font-weight: bold;
+  margin-bottom: 4px;
+  color: #1e90ff;
+}
+
+.vehicle-label .label-status {
+  font-size: 11px;
+  color: #aaa;
+}
+
+/* 控制面板 */
+.control-panel {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(10px);
+  border-radius: 12px;
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  z-index: 1000;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.control-btn {
+  background: linear-gradient(135deg, #1e90ff, #0066cc);
+  border: none;
+  color: #fff;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.3s ease;
+}
+
+.control-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(30, 144, 255, 0.4);
+}
+
+.control-btn:active {
+  transform: translateY(0);
+}
+
+.control-btn.secondary {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.control-btn.secondary:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* 速度滑块 */
+.speed-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #fff;
+  font-size: 13px;
+}
+
+.speed-slider {
+  width: 100px;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+  outline: none;
+}
+
+.speed-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: #1e90ff;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.speed-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 10px rgba(30, 144, 255, 0.5);
+}
+
+/* 视图模式选择 */
+.view-mode-select {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+}
+
+.view-mode-select option {
+  background: #333;
+}
+
+/* 车辆信息面板 */
+.vehicle-panel {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  width: 280px;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(10px);
+  border-radius: 12px;
+  padding: 20px;
+  color: #fff;
+  z-index: 1000;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.vehicle-panel h3 {
+  margin-bottom: 16px;
+  font-size: 16px;
+  color: #1e90ff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 10px;
+}
+
+.info-item {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.info-item span:first-child {
+  color: #aaa;
+}
+
+.info-item span:last-child {
+  color: #fff;
+  font-weight: 500;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.status-badge.idle {
+  background: rgba(100, 100, 100, 0.3);
+  color: #aaa;
+}
+
+.status-badge.moving {
+  background: rgba(30, 144, 255, 0.3);
+  color: #1e90ff;
+}
+
+.status-badge.arrived {
+  background: rgba(50, 205, 50, 0.3);
+  color: #32cd32;
+}
+
+/* 进度条 */
+.progress-section {
+  margin-top: 16px;
+}
+
+.progress-label {
+  font-size: 12px;
+  color: #aaa;
+  margin-bottom: 8px;
+}
+
+.progress-bar {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #1e90ff, #00ff88);
+  border-radius: 3px;
+  /* 移除过渡动画，让进度条瞬间变化 */
+}
+
+/* 轨迹控制面板 */
+.trajectory-panel {
+  position: fixed;
+  bottom: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(10px);
+  border-radius: 12px;
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  z-index: 1000;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.trajectory-progress {
+  width: 200px;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+  outline: none;
+}
+
+.trajectory-progress::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: #00ff88;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+/* FPS显示 */
+.fps-counter {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #0f0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  z-index: 1000;
+}
+
+/* 城市列表面板 */
+.city-list-panel {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  width: 200px;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(10px);
+  border-radius: 12px;
+  padding: 16px;
+  color: #fff;
+  z-index: 1000;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.city-list-panel h4 {
+  margin-bottom: 12px;
+  font-size: 14px;
+  color: #1e90ff;
+}
+
+.city-item {
+  display: flex;
+  align-items: center;
+  padding: 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 13px;
+}
+
+.city-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.city-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 10px;
+}
+
+/* 重点城市 - 橙色（与地图上的 effectScatter 一致） */
+.city-dot.highlight {
+  background: #ff4500;
+  box-shadow: 0 0 10px #ff4500;
+}
+
+/* 普通城市 - 蓝色（与地图上的 scatter 一致） */
+.city-dot.normal {
+  background: #1e90ff;
+  box-shadow: 0 0 8px #1e90ff;
+}
+
+.city-dot.active {
+  background: #ff4500;
+  box-shadow: 0 0 8px #ff4500;
+}
+
+.city-dot.inactive {
+  background: #666;
+}
+
+/* 提示信息 */
+.toast {
+  position: fixed;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-20px);
+  background: rgba(0, 0, 0, 0.9);
+  color: #fff;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  opacity: 0;
+  transition: all 0.3s ease;
+  z-index: 10000;
+  pointer-events: none;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* 响应式布局 */
+@media (max-width: 1200px) {
+  .vehicle-panel {
+    width: 240px;
+  }
+  
+  .control-panel {
+    padding: 12px 16px;
+    gap: 12px;
+  }
+  
+  .control-btn {
+    padding: 8px 16px;
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 768px) {
+  .app-container {
+    flex-direction: column;
+  }
+  
+  #map2d,
+  #scene3d {
+    width: 100%;
+    height: 50%;
+  }
+  
+  .vehicle-panel {
+    width: calc(100% - 40px);
+    top: auto;
+    bottom: 100px;
+    right: 20px;
+    left: 20px;
+  }
+  
+  .control-panel {
+    bottom: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
