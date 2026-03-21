@@ -551,7 +551,6 @@ export class Map2D {
    */
   _showRegionDetails(regionData) {
     console.log('区域详情:', regionData);
-    // 可以在这里触发一个自定义事件或回调
   }
 
   /**
