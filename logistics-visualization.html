@@ -1,0 +1,1874 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>物流轨迹2D+3D联动可视化系统</title>
+  
+  <!-- ECharts CDN -->
+  <script src="https://cdn.bootcdn.net/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
+  
+  <!-- Three.js Import Map -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  
+  <style>
+    /* 全局样式 */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+      overflow: hidden;
+      background: #000;
+    }
+
+    /* 主容器 */
+    .app-container {
+      display: flex;
+      width: 100vw;
+      height: 100vh;
+      position: relative;
+    }
+
+    /* 2D地图容器 */
+    #map2d {
+      width: 50%;
+      height: 100%;
+      background: #f5f5f5;
+      position: relative;
+    }
+
+    /* 3D场景容器 */
+    #scene3d {
+      width: 50%;
+      height: 100%;
+      background: #111;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* 加载遮罩 */
+    .loader-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.9);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+      transition: opacity 0.5s ease;
+    }
+
+    .loader-overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .spinner {
+      width: 60px;
+      height: 60px;
+      border: 4px solid rgba(255, 255, 255, 0.1);
+      border-top-color: #1e90ff;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .loader-text {
+      color: #fff;
+      margin-top: 20px;
+      font-size: 16px;
+      letter-spacing: 2px;
+    }
+
+    /* 城市标签 */
+    .city-label {
+      position: absolute;
+      color: #fff;
+      font-size: 14px;
+      font-weight: bold;
+      pointer-events: none;
+      text-shadow: 2px 2px 4px #000, 0 0 10px rgba(0, 0, 0, 0.8);
+      background: linear-gradient(135deg, rgba(255, 69, 0, 0.9), rgba(255, 140, 0, 0.9));
+      padding: 6px 12px;
+      border-radius: 6px;
+      white-space: nowrap;
+      z-index: 100;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5), 0 0 20px rgba(255, 69, 0, 0.3);
+      letter-spacing: 1px;
+    }
+
+    /* 车辆标签 */
+    .vehicle-label {
+      position: absolute;
+      background: rgba(0, 0, 0, 0.8);
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      pointer-events: none;
+      transform: translate(-50%, -100%);
+      margin-top: -15px;
+      z-index: 101;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+
+    .vehicle-label .label-name {
+      font-weight: bold;
+      margin-bottom: 4px;
+      color: #1e90ff;
+    }
+
+    .vehicle-label .label-status {
+      font-size: 11px;
+      color: #aaa;
+    }
+
+    /* 控制面板 */
+    .control-panel {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(10px);
+      border-radius: 12px;
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      z-index: 1000;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    }
+
+    .control-btn {
+      background: linear-gradient(135deg, #1e90ff, #0066cc);
+      border: none;
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.3s ease;
+    }
+
+    .control-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(30, 144, 255, 0.4);
+    }
+
+    .control-btn:active {
+      transform: translateY(0);
+    }
+
+    .control-btn.secondary {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .control-btn.secondary:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    /* 速度滑块 */
+    .speed-control {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #fff;
+      font-size: 13px;
+    }
+
+    .speed-slider {
+      width: 100px;
+      height: 4px;
+      -webkit-appearance: none;
+      appearance: none;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 2px;
+      outline: none;
+    }
+
+    .speed-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      background: #1e90ff;
+      border-radius: 50%;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .speed-slider::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+      box-shadow: 0 0 10px rgba(30, 144, 255, 0.5);
+    }
+
+    /* 视图模式选择 */
+    .view-mode-select {
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      outline: none;
+    }
+
+    .view-mode-select option {
+      background: #333;
+    }
+
+    /* 车辆信息面板 */
+    .vehicle-panel {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      width: 280px;
+      background: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(10px);
+      border-radius: 12px;
+      padding: 20px;
+      color: #fff;
+      z-index: 1000;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    }
+
+    .vehicle-panel h3 {
+      margin-bottom: 16px;
+      font-size: 16px;
+      color: #1e90ff;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      padding-bottom: 10px;
+    }
+
+    .info-item {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      font-size: 13px;
+    }
+
+    .info-item span:first-child {
+      color: #aaa;
+    }
+
+    .info-item span:last-child {
+      color: #fff;
+      font-weight: 500;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .status-badge.idle {
+      background: rgba(100, 100, 100, 0.3);
+      color: #aaa;
+    }
+
+    .status-badge.moving {
+      background: rgba(30, 144, 255, 0.3);
+      color: #1e90ff;
+    }
+
+    .status-badge.arrived {
+      background: rgba(50, 205, 50, 0.3);
+      color: #32cd32;
+    }
+
+    /* 进度条 */
+    .progress-section {
+      margin-top: 16px;
+    }
+
+    .progress-label {
+      font-size: 12px;
+      color: #aaa;
+      margin-bottom: 8px;
+    }
+
+    .progress-bar {
+      height: 6px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #1e90ff, #00ff88);
+      border-radius: 3px;
+    }
+
+    /* FPS显示 */
+    .fps-counter {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      background: rgba(0, 0, 0, 0.6);
+      color: #0f0;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      z-index: 1000;
+    }
+
+    /* 城市列表面板 */
+    .city-list-panel {
+      position: fixed;
+      top: 60px;
+      left: 20px;
+      width: 200px;
+      max-height: calc(100vh - 140px);
+      overflow-y: auto;
+      background: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(10px);
+      border-radius: 12px;
+      padding: 16px;
+      color: #fff;
+      z-index: 1000;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .city-list-panel h4 {
+      margin-bottom: 12px;
+      font-size: 14px;
+      color: #1e90ff;
+    }
+
+    .city-item {
+      display: flex;
+      align-items: center;
+      padding: 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-size: 13px;
+    }
+
+    .city-item:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .city-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 10px;
+    }
+
+    .city-dot.highlight {
+      background: #ff4500;
+      box-shadow: 0 0 10px #ff4500;
+    }
+
+    .city-dot.normal {
+      background: #1e90ff;
+      box-shadow: 0 0 8px #1e90ff;
+    }
+
+    /* 提示信息 */
+    .toast {
+      position: fixed;
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-20px);
+      background: rgba(0, 0, 0, 0.9);
+      color: #fff;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 14px;
+      opacity: 0;
+      transition: all 0.3s ease;
+      z-index: 10000;
+      pointer-events: none;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* 响应式布局 */
+    @media (max-width: 1200px) {
+      .vehicle-panel {
+        width: 240px;
+      }
+      
+      .control-panel {
+        padding: 12px 16px;
+        gap: 12px;
+      }
+      
+      .control-btn {
+        padding: 8px 16px;
+        font-size: 13px;
+      }
+    }
+
+    @media (max-width: 768px) {
+      .app-container {
+        flex-direction: column;
+      }
+      
+      #map2d,
+      #scene3d {
+        width: 100%;
+        height: 50%;
+      }
+      
+      .vehicle-panel {
+        width: calc(100% - 40px);
+        top: auto;
+        bottom: 100px;
+        right: 20px;
+        left: 20px;
+      }
+      
+      .control-panel {
+        bottom: 10px;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+    }
+
+    /* 滚动条样式 */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 3px;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 3px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+  </style>
+</head>
+<body>
+  <!-- 加载遮罩 -->
+  <div id="loader" class="loader-overlay">
+    <div class="spinner"></div>
+    <p class="loader-text">正在加载地图数据...</p>
+  </div>
+  
+  <!-- 主容器 -->
+  <div class="app-container">
+    <!-- 2D地图 -->
+    <div id="map2d"></div>
+    
+    <!-- 3D场景 -->
+    <div id="scene3d"></div>
+  </div>
+  
+  <!-- 主程序 -->
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // ==================== 配置常量 ====================
+    const CONFIG = {
+      RENDER: {
+        TARGET_FPS: 60,
+        ENABLE_SHADOWS: true,
+        ENABLE_ANTIALIAS: true
+      },
+      MAP: {
+        CENTER: [104.5, 35.5],
+        ZOOM: 4,
+        CHINA_GEOJSON_URL: 'https://geo.datav.aliyun.com/areas_v3/bound/100000.json'
+      },
+      SCENE3D: {
+        CAMERA_FOV: 60,
+        CAMERA_NEAR: 0.1,
+        CAMERA_FAR: 2000,
+        CAMERA_POSITION: [0, 15, 20],
+        GRID_SIZE: 50,
+        GRID_DIVISIONS: 25
+      },
+      VEHICLE: {
+        DEFAULT_SPEED: 0.1,
+        MAX_SPEED: 0.5,
+        MIN_SPEED: 0.05,
+        WHEEL_ROTATION_SPEED: 0.2
+      },
+      COORDINATE: {
+        SCALE: 1.5,
+        CENTER_LNG: 120,
+        CENTER_LAT: 30,
+        OFFSET_Y: 0.5
+      }
+    };
+
+    const CITIES = {
+      '上海': { name: '上海', code: '310000', center: [121.48, 31.22] },
+      '北京': { name: '北京', code: '110000', center: [116.40, 39.90] },
+      '广州': { name: '广州', code: '440100', center: [113.23, 23.16] },
+      '深圳': { name: '深圳', code: '440300', center: [114.08, 22.55] },
+      '杭州': { name: '杭州', code: '330100', center: [120.15, 30.28] },
+      '南京': { name: '南京', code: '320100', center: [118.78, 32.07] },
+      '成都': { name: '成都', code: '510100', center: [104.07, 30.67] },
+      '西安': { name: '西安', code: '610100', center: [108.93, 34.27] },
+      '武汉': { name: '武汉', code: '420100', center: [114.31, 30.59] },
+      '重庆': { name: '重庆', code: '500000', center: [106.55, 29.57] }
+    };
+
+    const VEHICLE_TYPES = {
+      TRUCK: { name: '货车', color: 0x1e90ff, size: [2, 1, 4] },
+      VAN: { name: '面包车', color: 0xff6347, size: [1.8, 1.2, 3] },
+      CONTAINER: { name: '集装箱车', color: 0x32cd32, size: [2.5, 1.5, 8] }
+    };
+
+    const STATUS = {
+      IDLE: 'idle',
+      MOVING: 'moving',
+      ARRIVED: 'arrived',
+      LOADING: 'loading',
+      UNLOADING: 'unloading'
+    };
+
+    // ==================== 坐标转换工具 ====================
+    class CoordinateConverter {
+      constructor() {
+        this.scale = CONFIG.COORDINATE.SCALE;
+        this.centerLng = CONFIG.COORDINATE.CENTER_LNG;
+        this.centerLat = CONFIG.COORDINATE.CENTER_LAT;
+      }
+
+      lngLatTo3D(lng, lat) {
+        const x = (lng - this.centerLng) * this.scale;
+        const z = (lat - this.centerLat) * this.scale;
+        return new THREE.Vector3(x, CONFIG.COORDINATE.OFFSET_Y, z);
+      }
+
+      toLngLat(pos) {
+        const lng = pos.x / this.scale + this.centerLng;
+        const lat = pos.z / this.scale + this.centerLat;
+        return [lng, lat];
+      }
+    }
+
+    const coordinateConverter = new CoordinateConverter();
+
+    // ==================== 动画工具 ====================
+    class AnimationUtils {
+      static createAnimationLoop(callback, targetFPS = 60) {
+        const frameInterval = 1000 / targetFPS;
+        let lastTime = 0;
+        let animationId = null;
+        let isRunning = false;
+
+        const loop = (currentTime) => {
+          if (!isRunning) return;
+          animationId = requestAnimationFrame(loop);
+          try {
+            const delta = currentTime - lastTime;
+            if (delta < frameInterval) return;
+            lastTime = currentTime - (delta % frameInterval);
+            callback(delta);
+          } catch (error) {
+            console.error('Animation loop error:', error);
+          }
+        };
+
+        return {
+          start() {
+            if (isRunning) return;
+            isRunning = true;
+            lastTime = performance.now();
+            animationId = requestAnimationFrame(loop);
+          },
+          stop() {
+            isRunning = false;
+            if (animationId) {
+              cancelAnimationFrame(animationId);
+              animationId = null;
+            }
+          },
+          get isRunning() {
+            return isRunning;
+          }
+        };
+      }
+    }
+
+    class FPSCounter {
+      constructor() {
+        this.frames = 0;
+        this.lastTime = performance.now();
+        this.fps = 0;
+      }
+
+      update() {
+        this.frames++;
+        const currentTime = performance.now();
+        if (currentTime >= this.lastTime + 1000) {
+          this.fps = this.frames;
+          this.frames = 0;
+          this.lastTime = currentTime;
+        }
+        return this.fps;
+      }
+    }
+
+    // ==================== 2D地图类 ====================
+    class Map2D {
+      constructor(container) {
+        this.container = container;
+        this.chart = null;
+        this.cityData = [];
+        this.lineData = [];
+        this.isReady = false;
+        this.onCityClick = null;
+        this.onMapReady = null;
+        this._init();
+      }
+
+      async _init() {
+        this.chart = echarts.init(this.container);
+        window.addEventListener('resize', () => {
+          if (this.chart) this.chart.resize();
+        });
+
+        try {
+          const response = await fetch(CONFIG.MAP.CHINA_GEOJSON_URL);
+          if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+          const chinaGeoJSON = await response.json();
+          echarts.registerMap('china', chinaGeoJSON);
+          this._prepareData();
+          this._setOption();
+          this._setupEventListeners();
+          this.isReady = true;
+          if (this.onMapReady) this.onMapReady();
+        } catch (error) {
+          console.error('加载地图数据失败:', error);
+          this._useFallbackMap();
+        }
+      }
+
+      _prepareData() {
+        this.cityData = Object.entries(CITIES).map(([name, data]) => ({
+          name: name,
+          value: [...data.center, 100],
+          label: name
+        }));
+
+        const mainCities = ['北京', '上海', '广州', '深圳', '成都', '西安'];
+        this.lineData = [];
+        for (let i = 0; i < mainCities.length; i++) {
+          for (let j = i + 1; j < mainCities.length; j++) {
+            const city1 = CITIES[mainCities[i]];
+            const city2 = CITIES[mainCities[j]];
+            if (city1 && city2) {
+              this.lineData.push({
+                coords: [city1.center, city2.center],
+                lineStyle: {
+                  color: Math.random() > 0.5 ? '#ff4500' : '#1e90ff',
+                  width: 2,
+                  opacity: 0.6
+                }
+              });
+            }
+          }
+        }
+      }
+
+      _setOption() {
+        const option = {
+          title: {
+            text: '物流车辆轨迹',
+            left: 'center',
+            top: 10,
+            textStyle: { fontSize: 18, fontWeight: 'bold', color: '#333' }
+          },
+          tooltip: {
+            trigger: 'item',
+            formatter: (params) => {
+              if (params.seriesType === 'scatter') {
+                return `${params.name}<br/>经度: ${params.value[0]}<br/>纬度: ${params.value[1]}`;
+              }
+              return params.name;
+            }
+          },
+          geo: {
+            map: 'china',
+            roam: true,
+            zoom: 1.2,
+            center: CONFIG.MAP.CENTER,
+            label: { show: true, color: '#333', fontSize: 10 },
+            itemStyle: { areaColor: '#e8f4fd', borderColor: '#1e90ff', borderWidth: 1 },
+            emphasis: {
+              label: { show: true, color: '#000' },
+              itemStyle: { areaColor: '#d0e8f7' }
+            }
+          },
+          series: [
+            {
+              type: 'lines',
+              coordinateSystem: 'geo',
+              data: this.lineData,
+              effect: { show: true, period: 6, trailLength: 0.7, color: '#fff', symbolSize: 3 },
+              lineStyle: { curveness: 0.2 }
+            },
+            {
+              type: 'scatter',
+              coordinateSystem: 'geo',
+              data: this.cityData,
+              symbolSize: 15,
+              itemStyle: {
+                color: '#1e90ff',
+                shadowBlur: 10,
+                shadowColor: 'rgba(0, 0, 0, 0.3)'
+              },
+              emphasis: {
+                symbolSize: 20,
+                itemStyle: { color: '#ff4500' }
+              },
+              label: {
+                show: true,
+                formatter: '{b}',
+                position: 'right',
+                fontSize: 12,
+                color: '#333',
+                backgroundColor: 'rgba(255,255,255,0.8)',
+                padding: [4, 8],
+                borderRadius: 4
+              }
+            },
+            {
+              type: 'effectScatter',
+              coordinateSystem: 'geo',
+              data: this.cityData.slice(0, 3),
+              symbolSize: 20,
+              showEffectOn: 'render',
+              rippleEffect: { brushType: 'stroke', scale: 3 },
+              itemStyle: { color: '#ff4500' }
+            }
+          ]
+        };
+        this.chart.setOption(option);
+      }
+
+      _useFallbackMap() {
+        const fallbackMap = {
+          type: 'FeatureCollection',
+          features: [{
+            type: 'Feature',
+            properties: { name: '中国' },
+            geometry: {
+              type: 'Polygon',
+              coordinates: [[[73.4, 18.1], [135.1, 18.1], [135.1, 53.6], [73.4, 53.6], [73.4, 18.1]]]
+            }
+          }]
+        };
+        echarts.registerMap('china', fallbackMap);
+        this._prepareData();
+        this._setOption();
+        this._setupEventListeners();
+        this.isReady = true;
+        if (this.onMapReady) this.onMapReady();
+      }
+
+      _setupEventListeners() {
+        this.chart.on('click', (params) => {
+          if (params.componentType === 'series' && 
+              (params.seriesType === 'scatter' || params.seriesType === 'effectScatter')) {
+            const cityName = params.name;
+            if (this.onCityClick) this.onCityClick(cityName);
+          }
+        });
+        this.chart.on('mouseover', (params) => {
+          if (params.componentType === 'series' && params.seriesType === 'scatter') {
+            this.container.style.cursor = 'pointer';
+          }
+        });
+        this.chart.on('mouseout', () => {
+          this.container.style.cursor = 'default';
+        });
+      }
+
+      highlightCity(cityName) {
+        if (!this.isReady) return;
+        this.chart.dispatchAction({ type: 'highlight', seriesIndex: 1, name: cityName });
+        setTimeout(() => {
+          this.chart.dispatchAction({ type: 'downplay', seriesIndex: 1, name: cityName });
+        }, 2000);
+      }
+
+      getCityCenter(cityName) {
+        const city = CITIES[cityName];
+        return city ? city.center : null;
+      }
+
+      dispose() {
+        if (this.chart) {
+          this.chart.dispose();
+          this.chart = null;
+        }
+      }
+    }
+
+    // ==================== 3D场景类 ====================
+    class Scene3D {
+      constructor(container) {
+        this.container = container;
+        this.scene = null;
+        this.camera = null;
+        this.renderer = null;
+        this.controls = null;
+        this.animationLoop = null;
+        this.fpsCounter = new FPSCounter();
+        this.cityMeshes = new Map();
+        this.cityLabels = new Map();
+        this.labelUpdateFns = [];
+        this.vehicles = new Map();
+        this.onCityClick = null;
+        this.onFPSUpdate = null;
+        this._init();
+      }
+
+      _init() {
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0x111111);
+        this.scene.fog = new THREE.Fog(0x111111, 20, 100);
+
+        const width = this.container.clientWidth || 800;
+        const height = this.container.clientHeight || 600;
+        const aspect = width / height;
+
+        this.camera = new THREE.PerspectiveCamera(
+          CONFIG.SCENE3D.CAMERA_FOV, aspect,
+          CONFIG.SCENE3D.CAMERA_NEAR, CONFIG.SCENE3D.CAMERA_FAR
+        );
+        this.camera.position.set(...CONFIG.SCENE3D.CAMERA_POSITION);
+        this.camera.lookAt(0, 0, 0);
+
+        this.renderer = new THREE.WebGLRenderer({ antialias: CONFIG.RENDER.ENABLE_ANTIALIAS });
+        this.renderer.setSize(width, height);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        this.renderer.shadowMap.enabled = CONFIG.RENDER.ENABLE_SHADOWS;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        this.container.appendChild(this.renderer.domElement);
+
+        this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+        this.controls.enableDamping = true;
+        this.controls.dampingFactor = 0.05;
+        this.controls.minDistance = 5;
+        this.controls.maxDistance = 100;
+        this.controls.maxPolarAngle = Math.PI / 2 - 0.1;
+
+        this._setupLights();
+        this._setupEnvironment();
+        this._createCityMarkers();
+        this._setupEventListeners();
+        this._startRenderLoop();
+      }
+
+      _setupLights() {
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+        this.scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(50, 50, 30);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        this.scene.add(dirLight);
+
+        const fillLight = new THREE.DirectionalLight(0x6666ff, 0.3);
+        fillLight.position.set(-30, 20, -30);
+        this.scene.add(fillLight);
+      }
+
+      _setupEnvironment() {
+        const gridHelper = new THREE.GridHelper(
+          CONFIG.SCENE3D.GRID_SIZE, CONFIG.SCENE3D.GRID_DIVISIONS, 0x444444, 0x222222
+        );
+        this.scene.add(gridHelper);
+
+        const planeGeo = new THREE.PlaneGeometry(200, 200);
+        const planeMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a, transparent: true, opacity: 0.8 });
+        const plane = new THREE.Mesh(planeGeo, planeMat);
+        plane.rotation.x = -Math.PI / 2;
+        plane.position.y = -0.01;
+        plane.receiveShadow = true;
+        this.scene.add(plane);
+
+        const axesHelper = new THREE.AxesHelper(10);
+        this.scene.add(axesHelper);
+      }
+
+      _createCityMarkers() {
+        const sphereGeo = new THREE.SphereGeometry(0.5, 32, 32);
+        const sphereMat = new THREE.MeshLambertMaterial({ color: 0xff4500 });
+        const pulseGeo = new THREE.SphereGeometry(0.5, 32, 32);
+        const pulseMat = new THREE.MeshBasicMaterial({ color: 0xff4500, transparent: true, opacity: 0.5 });
+
+        Object.entries(CITIES).forEach(([name, data]) => {
+          const pos = coordinateConverter.lngLatTo3D(...data.center);
+          const mesh = new THREE.Mesh(sphereGeo, sphereMat);
+          mesh.position.copy(pos);
+          mesh.castShadow = true;
+          mesh.userData = { cityName: name, isCity: true };
+          this.scene.add(mesh);
+          this.cityMeshes.set(name, mesh);
+
+          const pulse = new THREE.Mesh(pulseGeo, pulseMat);
+          pulse.position.copy(pos);
+          pulse.userData = { isPulse: true, baseScale: 1 };
+          this.scene.add(pulse);
+
+          this._createCityLabel(name, pos);
+        });
+      }
+
+      _createCityLabel(cityName, position) {
+        const label = document.createElement('div');
+        label.className = 'city-label';
+        label.textContent = cityName;
+        label.style.position = 'absolute';
+        label.style.left = '0';
+        label.style.top = '0';
+        this.container.appendChild(label);
+        this.cityLabels.set(cityName, label);
+
+        const updateFn = () => {
+          const pos = position.clone();
+          pos.y += 1.5;
+          pos.project(this.camera);
+          if (pos.z > 1) {
+            label.style.display = 'none';
+            return;
+          }
+          const x = (pos.x * 0.5 + 0.5) * this.container.clientWidth;
+          const y = (-(pos.y * 0.5 - 0.5) * this.container.clientHeight);
+          label.style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`;
+          label.style.display = 'block';
+        };
+        this.labelUpdateFns.push(updateFn);
+        updateFn();
+      }
+
+      _setupEventListeners() {
+        window.addEventListener('resize', () => {
+          const width = this.container.clientWidth;
+          const height = this.container.clientHeight;
+          this.camera.aspect = width / height;
+          this.camera.updateProjectionMatrix();
+          this.renderer.setSize(width, height);
+        });
+
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        this.renderer.domElement.addEventListener('click', (event) => {
+          const rect = this.renderer.domElement.getBoundingClientRect();
+          mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+          mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+          raycaster.setFromCamera(mouse, this.camera);
+          const cityMeshes = Array.from(this.cityMeshes.values());
+          const intersects = raycaster.intersectObjects(cityMeshes);
+          if (intersects.length > 0) {
+            const cityName = intersects[0].object.userData.cityName;
+            if (this.onCityClick) this.onCityClick(cityName);
+          }
+        });
+      }
+
+      _startRenderLoop() {
+        this.animationLoop = AnimationUtils.createAnimationLoop((deltaTime) => {
+          this._update(deltaTime);
+        }, CONFIG.RENDER.TARGET_FPS);
+        this.animationLoop.start();
+      }
+
+      _update(deltaTime) {
+        try {
+          this.controls.update();
+          const fps = this.fpsCounter.update();
+          if (fps > 0 && this.onFPSUpdate) this.onFPSUpdate(fps);
+          this.labelUpdateFns.forEach(fn => fn());
+
+          this.scene.children.forEach(child => {
+            if (child.userData.isPulse) {
+              const time = Date.now() * 0.002;
+              const scale = 1 + Math.sin(time) * 0.3;
+              child.scale.setScalar(scale);
+              child.material.opacity = 0.5 - (scale - 1) * 0.5;
+            }
+          });
+
+          this.vehicles.forEach(vehicle => {
+            try {
+              vehicle.update(deltaTime);
+              if (vehicle.labelUpdateFn) vehicle.labelUpdateFn();
+            } catch (e) {
+              console.error('车辆更新错误:', e);
+            }
+          });
+
+          this.renderer.render(this.scene, this.camera);
+        } catch (error) {
+          console.error('Scene3D._update 错误:', error);
+        }
+      }
+
+      addVehicle(vehicle) {
+        this.vehicles.set(vehicle.id, vehicle);
+        if (vehicle.mesh && !this.scene.children.includes(vehicle.mesh)) {
+          this.scene.add(vehicle.mesh);
+        }
+      }
+
+      getCityPosition(cityName) {
+        const city = CITIES[cityName];
+        return city ? coordinateConverter.lngLatTo3D(...city.center) : null;
+      }
+
+      highlightCity(cityName) {
+        const mesh = this.cityMeshes.get(cityName);
+        if (mesh) {
+          mesh.material.emissive = new THREE.Color(0xff0000);
+          mesh.material.emissiveIntensity = 0.5;
+          setTimeout(() => {
+            mesh.material.emissive = new THREE.Color(0x000000);
+            mesh.material.emissiveIntensity = 0;
+          }, 1000);
+        }
+      }
+
+      dispose() {
+        if (this.animationLoop) this.animationLoop.stop();
+        this.vehicles.forEach(vehicle => vehicle.dispose());
+        this.vehicles.clear();
+        this.cityLabels.forEach(label => label.remove());
+        this.cityLabels.clear();
+        this.scene.traverse(child => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) {
+            if (Array.isArray(child.material)) {
+              child.material.forEach(mat => mat.dispose());
+            } else {
+              child.material.dispose();
+            }
+          }
+        });
+        this.renderer.dispose();
+        this.container.removeChild(this.renderer.domElement);
+      }
+    }
+
+    // ==================== 车辆类 ====================
+    class Vehicle {
+      constructor(id, cityName, scene, options = {}) {
+        this.id = id;
+        this.scene = scene;
+        this.type = options.type || 'TRUCK';
+        this.config = VEHICLE_TYPES[this.type];
+        this.status = STATUS.IDLE;
+        this.currentCity = cityName;
+        this.targetCity = null;
+        this.path = [];
+        this.pathIndex = 0;
+        this.speed = options.speed || CONFIG.VEHICLE.DEFAULT_SPEED;
+        this.currentSpeed = 0;
+        this.maxSpeed = CONFIG.VEHICLE.MAX_SPEED;
+        this.mesh = null;
+        this.wheels = [];
+        this.label = null;
+        this.labelUpdateFn = null;
+        this.onStatusChange = null;
+        this.onPositionUpdate = null;
+        this.onArrive = null;
+        this.idleTimeoutId = null;
+        this._createModel();
+        this._createLabel();
+        if (this.scene && this.mesh) {
+          this.scene.add(this.mesh);
+        }
+      }
+
+      _createModel() {
+        this.mesh = new THREE.Group();
+        const [width, height, length] = this.config.size;
+
+        const bodyGeo = new THREE.BoxGeometry(width, height, length);
+        const bodyMat = new THREE.MeshLambertMaterial({ color: this.config.color });
+        const body = new THREE.Mesh(bodyGeo, bodyMat);
+        body.position.y = height / 2;
+        body.castShadow = true;
+        this.mesh.add(body);
+
+        const cabGeo = new THREE.BoxGeometry(width * 0.8, height * 0.6, length * 0.3);
+        const cabMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
+        const cab = new THREE.Mesh(cabGeo, cabMat);
+        cab.position.set(0, height + height * 0.3, length * 0.35);
+        cab.castShadow = true;
+        this.mesh.add(cab);
+
+        const wheelRadius = 0.3;
+        const wheelWidth = 0.3;
+        const wheelGeo = new THREE.CylinderGeometry(wheelRadius, wheelRadius, wheelWidth, 16);
+        const wheelMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
+
+        const wheelPositions = [
+          [-width / 2 - 0.1, wheelRadius, length * 0.3],
+          [width / 2 + 0.1, wheelRadius, length * 0.3],
+          [-width / 2 - 0.1, wheelRadius, -length * 0.3],
+          [width / 2 + 0.1, wheelRadius, -length * 0.3]
+        ];
+
+        wheelPositions.forEach(pos => {
+          const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+          wheel.rotation.z = Math.PI / 2;
+          wheel.position.set(...pos);
+          wheel.castShadow = true;
+          this.mesh.add(wheel);
+          this.wheels.push(wheel);
+        });
+
+        const lightGeo = new THREE.BoxGeometry(0.2, 0.1, 0.05);
+        const lightMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+        const leftLight = new THREE.Mesh(lightGeo, lightMat);
+        leftLight.position.set(-width * 0.3, height * 0.7, length / 2 + 0.02);
+        this.mesh.add(leftLight);
+        const rightLight = new THREE.Mesh(lightGeo, lightMat);
+        rightLight.position.set(width * 0.3, height * 0.7, length / 2 + 0.02);
+        this.mesh.add(rightLight);
+
+        this.scene.add(this.mesh);
+      }
+
+      _createLabel() {
+        this.label = document.createElement('div');
+        this.label.className = 'vehicle-label';
+        this.label.innerHTML = `<div class="label-name">车辆 ${this.id}</div><div class="label-status">${this.status}</div>`;
+        const container = document.getElementById('scene3d');
+        if (container) {
+          container.appendChild(this.label);
+        } else {
+          document.body.appendChild(this.label);
+        }
+
+        this.labelUpdateFn = () => {
+          if (!this.mesh) return;
+          const container = document.getElementById('scene3d');
+          if (!container) return;
+          const pos = this.mesh.position.clone();
+          pos.y += 2;
+          pos.project(window.app.scene3d.camera);
+          const x = (pos.x * 0.5 + 0.5) * container.clientWidth;
+          const y = (-(pos.y * 0.5 - 0.5) * container.clientHeight);
+          this.label.style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`;
+          this.label.style.display = pos.z < 1 ? 'block' : 'none';
+        };
+      }
+
+      moveTo(cityName, targetPos) {
+        if (this.status === STATUS.MOVING) return;
+        if (this.idleTimeoutId) {
+          clearTimeout(this.idleTimeoutId);
+          this.idleTimeoutId = null;
+        }
+        this.targetCity = cityName;
+        this.targetPos = targetPos.clone();
+        this.status = STATUS.MOVING;
+        this.currentSpeed = this.speed;
+        const direction = this.targetPos.clone().sub(this.mesh.position).normalize();
+        const angle = Math.atan2(direction.x, direction.z);
+        this.mesh.rotation.y = angle;
+        this._updateLabel();
+        if (this.onStatusChange) this.onStatusChange(this.status);
+      }
+
+      update(deltaTime) {
+        if (this.status !== STATUS.MOVING || !this.targetPos) return;
+        this.wheels.forEach(wheel => {
+          wheel.rotation.x += CONFIG.VEHICLE.WHEEL_ROTATION_SPEED;
+        });
+        const distance = this.mesh.position.distanceTo(this.targetPos);
+        const maxMoveDistance = this.currentSpeed * Math.min(deltaTime, 50) * 0.1;
+        const moveDistance = Math.min(maxMoveDistance, distance);
+
+        if (distance > 0.005) {
+          const direction = this.targetPos.clone().sub(this.mesh.position).normalize();
+          this.mesh.position.add(direction.multiplyScalar(moveDistance));
+          if (this.onPositionUpdate) this.onPositionUpdate(this.mesh.position.clone());
+        } else {
+          this.mesh.position.copy(this.targetPos);
+          this.currentCity = this.targetCity;
+          this.status = STATUS.ARRIVED;
+          this.currentSpeed = 0;
+          this._updateLabel();
+          if (this.onStatusChange) this.onStatusChange(this.status);
+          if (this.onArrive) this.onArrive(this.currentCity);
+          this.idleTimeoutId = setTimeout(() => {
+            this.status = STATUS.IDLE;
+            this.idleTimeoutId = null;
+            this._updateLabel();
+            if (this.onStatusChange) this.onStatusChange(this.status);
+          }, 2000);
+        }
+      }
+
+      _updateLabel() {
+        if (!this.label) return;
+        const statusText = {
+          [STATUS.IDLE]: '空闲',
+          [STATUS.MOVING]: '行驶中',
+          [STATUS.ARRIVED]: '已到达',
+          [STATUS.LOADING]: '装货中',
+          [STATUS.UNLOADING]: '卸货中'
+        };
+        this.label.querySelector('.label-status').textContent = statusText[this.status] || this.status;
+      }
+
+      setPosition(position) {
+        if (this.mesh) this.mesh.position.copy(position);
+      }
+
+      getPosition() {
+        return this.mesh ? this.mesh.position.clone() : new THREE.Vector3();
+      }
+
+      dispose() {
+        if (this.label) {
+          this.label.remove();
+          this.label = null;
+        }
+        if (this.mesh) {
+          this.scene.remove(this.mesh);
+          this.mesh.traverse(child => {
+            if (child.geometry) child.geometry.dispose();
+            if (child.material) child.material.dispose();
+          });
+          this.mesh = null;
+        }
+      }
+    }
+
+    // ==================== 轨迹播放器 ====================
+    class TrajectoryPlayer {
+      constructor(scene3d, map2d) {
+        this.scene3d = scene3d;
+        this.map2d = map2d;
+        this.trajectorySegments = [];
+        this.trajectoryData = [];
+        this.currentIndex = 0;
+        this.isPlaying = false;
+        this.playbackSpeed = 1;
+        this.currentTime = 0;
+        this.vehicle = null;
+        this.pathLines = [];
+        this.pathPoints = [];
+        this.onPlay = null;
+        this.onPause = null;
+        this.onProgress = null;
+        this.onComplete = null;
+        this.animationId = null;
+      }
+
+      addSegment(fromCity, toCity) {
+        const startPos = this.scene3d.getCityPosition(fromCity);
+        const endPos = this.scene3d.getCityPosition(toCity);
+        if (!startPos || !endPos) {
+          console.error('城市位置不存在:', fromCity, '->', toCity);
+          return this;
+        }
+        const segmentData = [];
+        const pointCount = 50;
+        for (let i = 0; i < pointCount; i++) {
+          const t = i / (pointCount - 1);
+          const pos = new THREE.Vector3().lerpVectors(startPos, endPos, t);
+          segmentData.push({
+            time: i * 100,
+            position: pos,
+            fromCity: fromCity,
+            toCity: toCity
+          });
+        }
+        this.trajectorySegments.push({ fromCity, toCity, data: segmentData });
+        this._createSegmentLine(startPos, endPos, fromCity, toCity);
+        return this;
+      }
+
+      _createSegmentLine(startPos, endPos, fromCity, toCity) {
+        const points = [startPos, endPos];
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const colors = [0x00ff88, 0x0088ff, 0xff8800, 0xff0088, 0x88ff00, 0x8800ff];
+        const color = colors[this.trajectorySegments.length % colors.length];
+        const material = new THREE.LineBasicMaterial({ color: color, linewidth: 3, transparent: true, opacity: 0.8 });
+        const line = new THREE.Line(geometry, material);
+        this.scene3d.scene.add(line);
+        this.pathLines.push(line);
+        this._createEndpointMarkers(startPos, endPos, fromCity, toCity, color);
+      }
+
+      _createEndpointMarkers(startPos, endPos, fromCity, toCity, color) {
+        const sphereGeo = new THREE.SphereGeometry(0.2, 16, 16);
+        const sphereMat = new THREE.MeshBasicMaterial({ color: color });
+        const startMarker = new THREE.Mesh(sphereGeo, sphereMat);
+        startMarker.position.copy(startPos);
+        startMarker.position.y += 0.5;
+        this.scene3d.scene.add(startMarker);
+        this.pathPoints.push(startMarker);
+        const endMarker = new THREE.Mesh(sphereGeo, sphereMat);
+        endMarker.position.copy(endPos);
+        endMarker.position.y += 0.5;
+        this.scene3d.scene.add(endMarker);
+        this.pathPoints.push(endMarker);
+      }
+
+      loadAllSegments() {
+        if (this.trajectorySegments.length === 0) {
+          console.warn('没有轨迹段可加载');
+          return this;
+        }
+        this.trajectoryData = [];
+        let timeOffset = 0;
+        this.trajectorySegments.forEach((segment, index) => {
+          segment.data.forEach((point, i) => {
+            this.trajectoryData.push({ ...point, time: point.time + timeOffset, segmentIndex: index });
+          });
+          timeOffset += 5000 + 1000;
+        });
+        this.currentIndex = 0;
+        this.currentTime = 0;
+        return this;
+      }
+
+      generateTrajectory(startCity, endCity, pointCount = 50) {
+        return this.addSegment(startCity, endCity);
+      }
+
+      play() {
+        if (this.trajectoryData.length === 0) this.loadAllSegments();
+        if (this.trajectoryData.length === 0) {
+          console.warn('没有轨迹数据可播放');
+          return;
+        }
+        if (this.isPlaying) return;
+        if (this.currentIndex >= this.trajectoryData.length - 1) {
+          this.currentIndex = 0;
+          this.currentTime = 0;
+        }
+        this.isPlaying = true;
+        if (this.onPlay) this.onPlay();
+        this._startPlayback();
+      }
+
+      pause() {
+        this.isPlaying = false;
+        if (this.animationId) {
+          cancelAnimationFrame(this.animationId);
+          this.animationId = null;
+        }
+        if (this.onPause) this.onPause();
+      }
+
+      stop() {
+        this.pause();
+        this.currentIndex = 0;
+        this.currentTime = 0;
+        this._updateVehiclePosition();
+        if (this.onProgress) this.onProgress(0);
+      }
+
+      setSpeed(speed) {
+        this.playbackSpeed = Math.max(0.1, Math.min(5, speed));
+      }
+
+      _startPlayback() {
+        let lastTime = performance.now();
+        const loop = (currentTime) => {
+          if (!this.isPlaying) return;
+          const deltaTime = (currentTime - lastTime) * this.playbackSpeed;
+          lastTime = currentTime;
+          this.currentTime += deltaTime;
+          while (this.currentIndex < this.trajectoryData.length - 1 &&
+                 this.trajectoryData[this.currentIndex + 1].time <= this.currentTime) {
+            this.currentIndex++;
+          }
+          this._updateVehiclePosition();
+          const progress = this.currentIndex / (this.trajectoryData.length - 1);
+          if (this.onProgress) this.onProgress(progress);
+          if (this.currentIndex >= this.trajectoryData.length - 1) {
+            this.pause();
+            if (this.onComplete) this.onComplete();
+            return;
+          }
+          this.animationId = requestAnimationFrame(loop);
+        };
+        this.animationId = requestAnimationFrame(loop);
+      }
+
+      _updateVehiclePosition() {
+        if (!this.vehicle || this.trajectoryData.length === 0) return;
+        const currentData = this.trajectoryData[this.currentIndex];
+        const nextData = this.trajectoryData[this.currentIndex + 1];
+        if (!currentData) return;
+        let position = currentData.position.clone();
+        if (nextData) {
+          const timeDiff = nextData.time - currentData.time;
+          const t = timeDiff > 0 ? (this.currentTime - currentData.time) / timeDiff : 0;
+          position.lerp(nextData.position, t);
+        }
+        this.vehicle.setPosition(position);
+        if (nextData) {
+          const direction = nextData.position.clone().sub(currentData.position).normalize();
+          const angle = Math.atan2(direction.x, direction.z);
+          this.vehicle.mesh.rotation.y = angle;
+        }
+      }
+
+      bindVehicle(vehicle) {
+        this.vehicle = vehicle;
+        if (this.trajectoryData.length > 0) this._updateVehiclePosition();
+      }
+
+      hide() {
+        this.pathLines.forEach(line => line.visible = false);
+        this.pathPoints.forEach(point => point.visible = false);
+      }
+
+      show() {
+        this.pathLines.forEach(line => line.visible = true);
+        this.pathPoints.forEach(point => point.visible = true);
+      }
+
+      toggleVisibility() {
+        const isVisible = this.pathLines.length > 0 && this.pathLines[0].visible;
+        if (isVisible) this.hide(); else this.show();
+        return !isVisible;
+      }
+
+      clear() {
+        this.stop();
+        this.pathLines.forEach(line => {
+          this.scene3d.scene.remove(line);
+          line.geometry.dispose();
+          line.material.dispose();
+        });
+        this.pathLines = [];
+        this.pathPoints.forEach(point => {
+          this.scene3d.scene.remove(point);
+          point.geometry.dispose();
+          point.material.dispose();
+        });
+        this.pathPoints = [];
+        this.trajectorySegments = [];
+        this.trajectoryData = [];
+        this.currentIndex = 0;
+        this.currentTime = 0;
+      }
+
+      dispose() {
+        this.clear();
+        this.vehicle = null;
+      }
+    }
+
+    // ==================== 主应用类 ====================
+    class LogisticsApp {
+      constructor() {
+        this.map2d = null;
+        this.scene3d = null;
+        this.vehicles = new Map();
+        this.trajectoryPlayer = null;
+        this.currentVehicle = null;
+        this.isLoading = true;
+        this.viewMode = 'split';
+        this.init();
+      }
+
+      async init() {
+        console.log('开始初始化应用...');
+        this._showLoader();
+        try {
+          this.map2d = new Map2D(document.getElementById('map2d'));
+          this.map2d.onCityClick = (cityName) => this._handleCityClick(cityName);
+          this.map2d.onMapReady = () => this._onMapReady();
+
+          this.scene3d = new Scene3D(document.getElementById('scene3d'));
+          this.scene3d.onCityClick = (cityName) => this._handleCityClick(cityName);
+          this.scene3d.onFPSUpdate = (fps) => this._updateFPS(fps);
+
+          this._createDefaultVehicle();
+          this.trajectoryPlayer = new TrajectoryPlayer(this.scene3d, this.map2d);
+          this._createUI();
+          await this._waitForMapReady();
+          this._hideLoader();
+          console.log('物流轨迹可视化系统初始化完成！');
+          this._showToast('系统初始化完成');
+        } catch (error) {
+          console.error('初始化失败:', error);
+          this._hideLoader();
+          this._showToast('初始化失败，请刷新页面重试', 'error');
+        }
+      }
+
+      _showLoader() {
+        const loader = document.getElementById('loader');
+        if (loader) loader.classList.remove('hidden');
+      }
+
+      _hideLoader() {
+        const loader = document.getElementById('loader');
+        if (loader) loader.classList.add('hidden');
+      }
+
+      _waitForMapReady() {
+        return new Promise((resolve) => {
+          if (this.map2d.isReady) {
+            resolve();
+            return;
+          }
+          const maxWaitTime = 5000;
+          const startTime = Date.now();
+          const checkReady = () => {
+            if (this.map2d.isReady) {
+              resolve();
+            } else if (Date.now() - startTime > maxWaitTime) {
+              console.warn('地图加载超时，继续初始化');
+              resolve();
+            } else {
+              setTimeout(checkReady, 100);
+            }
+          };
+          checkReady();
+        });
+      }
+
+      _onMapReady() {
+        console.log('地图加载完成');
+      }
+
+      _createDefaultVehicle() {
+        const vehicle = new Vehicle('V001', '上海', this.scene3d.scene, { type: 'TRUCK', speed: 0.15 });
+        const startPos = this.scene3d.getCityPosition('上海');
+        if (startPos) vehicle.setPosition(startPos);
+        vehicle.onStatusChange = (status) => this._onVehicleStatusChange(vehicle, status);
+        vehicle.onPositionUpdate = (position) => this._onVehiclePositionUpdate(vehicle, position);
+        vehicle.onArrive = (cityName) => this._onVehicleArrive(vehicle, cityName);
+        this.scene3d.addVehicle(vehicle);
+        this.vehicles.set(vehicle.id, vehicle);
+        this.currentVehicle = vehicle;
+        this._updateVehiclePanel(vehicle);
+      }
+
+      _handleCityClick(cityName) {
+        if (!this.currentVehicle || this.currentVehicle.status === STATUS.MOVING) {
+          this._showToast('车辆正在行驶中，请稍后再试');
+          return;
+        }
+        if (this.currentVehicle.currentCity === cityName) {
+          this._showToast(`车辆已在${cityName}`);
+          return;
+        }
+        const fromCity = this.currentVehicle.currentCity;
+        const targetPos = this.scene3d.getCityPosition(cityName);
+        if (targetPos) {
+          this.trajectoryPlayer.addSegment(fromCity, cityName);
+          this.currentVehicle.moveTo(cityName, targetPos);
+          this.map2d.highlightCity(cityName);
+          this.scene3d.highlightCity(cityName);
+          this._showToast(`车辆正在前往${cityName}`);
+        }
+      }
+
+      _onVehicleStatusChange(vehicle, status) {
+        this._updateVehiclePanel(vehicle);
+      }
+
+      _onVehiclePositionUpdate(vehicle, position) {
+        if (vehicle.status === STATUS.MOVING && vehicle.targetPos) {
+          const progressEl = document.getElementById('task-progress');
+          if (progressEl) {
+            const startPos = this.scene3d.getCityPosition(vehicle.currentCity);
+            if (startPos) {
+              const totalDist = startPos.distanceTo(vehicle.targetPos);
+              const currentDist = position.distanceTo(vehicle.targetPos);
+              const remainingProgress = Math.max(0, Math.min(100, (currentDist / totalDist) * 100));
+              progressEl.style.width = `${remainingProgress}%`;
+            }
+          }
+        }
+      }
+
+      _onVehicleArrive(vehicle, cityName) {
+        this._showToast(`车辆已到达${cityName}`);
+        this.map2d.highlightCity(cityName);
+      }
+
+      _createUI() {
+        this._createVehiclePanel();
+        this._createControlPanel();
+        this._createCityListPanel();
+        this._createFPSCounter();
+        this._createToast();
+      }
+
+      _createVehiclePanel() {
+        const panel = document.createElement('div');
+        panel.className = 'vehicle-panel';
+        panel.id = 'vehiclePanel';
+        panel.innerHTML = `
+          <h3>车辆信息</h3>
+          <div class="info-item"><span>车辆编号</span><span id="vehicle-id">--</span></div>
+          <div class="info-item"><span>当前位置</span><span id="current-pos">--</span></div>
+          <div class="info-item"><span>目标位置</span><span id="target-pos">--</span></div>
+          <div class="info-item"><span>行驶状态</span><span id="vehicle-status" class="status-badge idle">空闲</span></div>
+          <div class="info-item"><span>当前速度</span><span id="vehicle-speed">0 km/h</span></div>
+          <div class="progress-section">
+            <div class="progress-label">任务进度</div>
+            <div class="progress-bar"><div class="progress-fill" id="task-progress" style="width: 0%"></div></div>
+          </div>
+        `;
+        document.body.appendChild(panel);
+      }
+
+      _updateVehiclePanel(vehicle) {
+        const panel = document.getElementById('vehiclePanel');
+        if (!panel) return;
+        document.getElementById('vehicle-id').textContent = vehicle.id;
+        document.getElementById('current-pos').textContent = vehicle.currentCity || '--';
+        document.getElementById('target-pos').textContent = vehicle.targetCity || '--';
+        document.getElementById('vehicle-speed').textContent = 
+          vehicle.currentSpeed > 0 ? `${Math.round(vehicle.currentSpeed * 100)} km/h` : '0 km/h';
+        const statusEl = document.getElementById('vehicle-status');
+        statusEl.className = `status-badge ${vehicle.status}`;
+        const statusText = { [STATUS.IDLE]: '空闲', [STATUS.MOVING]: '行驶中', [STATUS.ARRIVED]: '已到达' };
+        statusEl.textContent = statusText[vehicle.status] || vehicle.status;
+        const progressEl = document.getElementById('task-progress');
+        if (vehicle.status === STATUS.MOVING && vehicle.targetPos) {
+          const startPos = this.scene3d.getCityPosition(vehicle.currentCity);
+          if (startPos) {
+            const totalDist = startPos.distanceTo(vehicle.targetPos);
+            const currentDist = vehicle.getPosition().distanceTo(vehicle.targetPos);
+            const remainingProgress = Math.max(0, Math.min(100, (currentDist / totalDist) * 100));
+            progressEl.style.width = `${remainingProgress}%`;
+          }
+        } else {
+          progressEl.style.width = '0%';
+        }
+      }
+
+      _createControlPanel() {
+        const panel = document.createElement('div');
+        panel.className = 'control-panel';
+        panel.innerHTML = `
+          <button class="control-btn" id="play-btn"><span>▶</span> 回放</button>
+          <button class="control-btn secondary" id="pause-btn"><span>⏸</span> 暂停</button>
+          <button class="control-btn secondary" id="stop-btn"><span>⏹</span> 停止</button>
+          <button class="control-btn secondary" id="toggle-trace-btn"><span>👁</span> 隐藏轨迹</button>
+          <button class="control-btn secondary" id="clear-trace-btn"><span>🗑</span> 清除轨迹</button>
+          <div class="speed-control">
+            <span>速度:</span>
+            <input type="range" class="speed-slider" id="speed-slider" min="0.5" max="5" step="0.5" value="1">
+            <span id="speed-value">1x</span>
+          </div>
+          <select class="view-mode-select" id="view-mode">
+            <option value="split">分屏视图</option>
+            <option value="2d">仅2D地图</option>
+            <option value="3d">仅3D场景</option>
+          </select>
+        `;
+        document.body.appendChild(panel);
+        document.getElementById('play-btn').addEventListener('click', () => this._playTrajectory());
+        document.getElementById('pause-btn').addEventListener('click', () => this._pauseTrajectory());
+        document.getElementById('stop-btn').addEventListener('click', () => this._stopTrajectory());
+        document.getElementById('toggle-trace-btn').addEventListener('click', () => this._toggleTrace());
+        document.getElementById('clear-trace-btn').addEventListener('click', () => this._clearTrace());
+        const speedSlider = document.getElementById('speed-slider');
+        speedSlider.addEventListener('input', (e) => {
+          const speed = parseFloat(e.target.value);
+          document.getElementById('speed-value').textContent = `${speed}x`;
+          if (this.trajectoryPlayer) this.trajectoryPlayer.setSpeed(speed);
+        });
+        document.getElementById('view-mode').addEventListener('change', (e) => {
+          this._setViewMode(e.target.value);
+        });
+      }
+
+      _playTrajectory() {
+        if (!this.currentVehicle) return;
+        if (!this.trajectoryPlayer.trajectoryData.length) {
+          const cities = Object.keys(CITIES);
+          const startCity = this.currentVehicle.currentCity || cities[0];
+          const endCity = cities.find(c => c !== startCity) || cities[1];
+          this.trajectoryPlayer.generateTrajectory(startCity, endCity, 100);
+          this.trajectoryPlayer.bindVehicle(this.currentVehicle);
+        }
+        this.trajectoryPlayer.play();
+        this._showToast('开始轨迹回放');
+      }
+
+      _pauseTrajectory() {
+        if (this.trajectoryPlayer) {
+          this.trajectoryPlayer.pause();
+          this._showToast('轨迹回放已暂停');
+        }
+      }
+
+      _stopTrajectory() {
+        if (this.trajectoryPlayer) {
+          this.trajectoryPlayer.stop();
+          this._showToast('轨迹回放已停止');
+        }
+      }
+
+      _toggleTrace() {
+        if (!this.trajectoryPlayer) return;
+        const isVisible = this.trajectoryPlayer.toggleVisibility();
+        const btn = document.getElementById('toggle-trace-btn');
+        if (btn) btn.innerHTML = isVisible ? '<span>👁</span> 隐藏轨迹' : '<span>👁</span> 显示轨迹';
+        this._showToast(isVisible ? '轨迹已显示' : '轨迹已隐藏');
+      }
+
+      _clearTrace() {
+        if (!this.trajectoryPlayer) return;
+        this.trajectoryPlayer.clear();
+        const btn = document.getElementById('toggle-trace-btn');
+        if (btn) btn.innerHTML = '<span>👁</span> 隐藏轨迹';
+        this._showToast('所有轨迹已清除');
+      }
+
+      _setViewMode(mode) {
+        this.viewMode = mode;
+        const map2d = document.getElementById('map2d');
+        const scene3d = document.getElementById('scene3d');
+        switch (mode) {
+          case '2d':
+            map2d.style.width = '100%';
+            scene3d.style.width = '0%';
+            scene3d.style.display = 'none';
+            map2d.style.display = 'block';
+            break;
+          case '3d':
+            map2d.style.width = '0%';
+            map2d.style.display = 'none';
+            scene3d.style.width = '100%';
+            scene3d.style.display = 'block';
+            break;
+          default:
+            map2d.style.width = '50%';
+            map2d.style.display = 'block';
+            scene3d.style.width = '50%';
+            scene3d.style.display = 'block';
+        }
+        window.dispatchEvent(new Event('resize'));
+      }
+
+      _createCityListPanel() {
+        const panel = document.createElement('div');
+        panel.className = 'city-list-panel';
+        panel.innerHTML = `<h4>城市列表</h4><div id="city-list"></div>`;
+        document.body.appendChild(panel);
+        const cityList = document.getElementById('city-list');
+        const cityEntries = Object.entries(CITIES);
+        cityEntries.forEach(([name, data], index) => {
+          const item = document.createElement('div');
+          item.className = 'city-item';
+          const isHighlight = index < 3;
+          const dotClass = isHighlight ? 'highlight' : 'normal';
+          item.innerHTML = `<span class="city-dot ${dotClass}"></span><span>${name}</span>`;
+          item.addEventListener('click', () => this._handleCityClick(name));
+          cityList.appendChild(item);
+        });
+      }
+
+      _createFPSCounter() {
+        const fps = document.createElement('div');
+        fps.className = 'fps-counter';
+        fps.id = 'fps-counter';
+        fps.textContent = 'FPS: 60';
+        document.body.appendChild(fps);
+      }
+
+      _updateFPS(fps) {
+        const fpsEl = document.getElementById('fps-counter');
+        if (fpsEl) {
+          fpsEl.textContent = `FPS: ${fps}`;
+          fpsEl.style.color = fps >= 50 ? '#0f0' : fps >= 30 ? '#ff0' : '#f00';
+        }
+      }
+
+      _createToast() {
+        const toast = document.createElement('div');
+        toast.className = 'toast';
+        toast.id = 'toast';
+        document.body.appendChild(toast);
+      }
+
+      _showToast(message, type = 'info') {
+        const toast = document.getElementById('toast');
+        if (toast) {
+          toast.textContent = message;
+          toast.classList.add('show');
+          setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+      }
+
+      dispose() {
+        if (this.trajectoryPlayer) this.trajectoryPlayer.dispose();
+        this.vehicles.forEach(vehicle => vehicle.dispose());
+        this.vehicles.clear();
+        if (this.map2d) this.map2d.dispose();
+        if (this.scene3d) this.scene3d.dispose();
+      }
+    }
+
+    window.LogisticsApp = LogisticsApp;
+
+    document.addEventListener('DOMContentLoaded', () => {
+      window.app = new LogisticsApp();
+    });
+
+    window.addEventListener('beforeunload', () => {
+      if (window.app) window.app.dispose();
+    });
+  </script>
+</body>
+</html>
