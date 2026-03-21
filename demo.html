@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>物流轨迹2D+3D联动</title>
+  <style>
+    body { margin: 0; display: flex; overflow: hidden; }
+    #map2d { width: 50%; height: 100vh; background: #f5f5f5; }
+    #scene3d { width: 50%; height: 100vh; background: #000; }
+    /* 3D文字标注样式 */
+    .label {
+      position: absolute;
+      color: #fff;
+      font-size: 14px;
+      font-weight: bold;
+      pointer-events: none; /* 不遮挡交互 */
+      text-shadow: 1px 1px 2px #000;
+    }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+
+  <!-- ECharts CDN -->
+  <script src="https://cdn.bootcdn.net/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
+</head>
+<body>
+  <div id="map2d"></div>
+  <div id="scene3d"></div>
+
+  <script type="module">
+    //导入Three.js及轨道控制
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    //注册ECharts中国地图 
+    const chinaMapData = {
+      type: 'map',
+      name: 'china',
+      regions: [
+        { name: '上海', code: '310000', center: [121.48, 31.22] },
+        { name: '北京', code: '110000', center: [116.40, 39.90] },
+        { name: '广州', code: '440100', center: [113.23, 23.16] }
+      ],
+      geoJSON: {
+        type: "FeatureCollection",
+        features: [{
+          type: "Feature",
+          properties: { name: "中国" },
+          geometry: {
+            type: "Polygon",
+            coordinates: [[[73.4,18.1],[135.1,18.1],[135.1,53.6],[73.4,53.6],[73.4,18.1]]]
+          }
+        }]
+      }
+    };
+    echarts.registerMap('china', chinaMapData);
+
+    //初始化2D地图
+    const mapChart = echarts.init(document.getElementById('map2d'));
+    mapChart.setOption({
+      title: { text: '物流车辆轨迹', left: 'center', textStyle: { fontSize: 18, fontWeight: 'bold' } },
+      geo: { 
+        map: 'china', 
+        roam: true,
+        label: { show: true, color: '#333', fontSize: 12 }, 
+        itemStyle: { areaColor: '#e8f4fd', borderColor: '#1e90ff' }
+      },
+      series: [{
+        type: 'lines',
+        data: [
+          [{name: '上海', value: [121.48, 31.22]}, {name: '北京', value: [116.40, 39.90]}],
+          [{name: '上海', value: [121.48, 31.22]}, {name: '广州', value: [113.23, 23.16]}]
+        ],
+        lineStyle: { color: '#ff4500', width: 3 },
+        effect: { show: true, color: '#ff4500', trailLength: 0.2 }
+      }, {
+        type: 'scatter',
+        coordinateSystem: 'geo',
+        data: [
+          { name: '上海', value: [121.48, 31.22], label: '上海' }, 
+          { name: '北京', value: [116.40, 39.90], label: '北京' },
+          { name: '广州', value: [113.23, 23.16], label: '广州' }
+        ],
+        symbolSize: 15,
+        itemStyle: { color: '#1e90ff' },
+        emphasis: { symbolSize: 20, color: '#ff4500' },
+        label: { 
+          show: true,
+          formatter: '{b}',
+          position: 'right',
+          fontSize: 12,
+          color: '#333'
+        }
+      }]
+    });
+
+    // 初始化3D场景
+    const scene3dDom = document.getElementById('scene3d');
+    
+    // 基础场景
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x111111);
+    
+    const aspect = scene3dDom.clientWidth / scene3dDom.clientHeight;
+    const camera = new THREE.PerspectiveCamera(60, aspect, 0.1, 2000);
+    camera.position.set(0, 15, 20);
+    camera.lookAt(0, 0, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(scene3dDom.clientWidth, scene3dDom.clientHeight);
+    scene3dDom.appendChild(renderer.domElement);
+
+    // 镜头漫游功能
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true; // 阻尼效果，漫游更顺滑
+    controls.dampingFactor = 0.05;
+    controls.minDistance = 5; // 最小缩放距离
+    controls.maxDistance = 50; // 最大缩放距离
+    controls.maxPolarAngle = Math.PI / 2; // 禁止俯视到地面以下
+    controls.enablePan = true; // 允许平移
+    controls.enableRotate = true; // 允许旋转
+    controls.enableZoom = true; // 允许缩放
+
+    // 网格地面（扩大范围）
+    const gridHelper = new THREE.GridHelper(50, 25, 0x444444, 0x222222);
+    scene.add(gridHelper);
+    scene.add(new THREE.AxesHelper(10));
+
+    // 光照
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(20, 20, 10);
+    scene.add(dirLight);
+
+    // 3D点位标注
+    // 点位数据映射
+    const pointData = {
+      上海: new THREE.Vector3((121.48 - 120) * 1.5, 0, (31.22 - 30) * 1.5),
+      北京: new THREE.Vector3((116.40 - 120) * 1.5, 0, (39.90 - 30) * 1.5),
+      广州: new THREE.Vector3((113.23 - 120) * 1.5, 0, (23.16 - 30) * 1.5)
+    };
+
+    // 创建3D点位标记
+    for (const [name, pos] of Object.entries(pointData)) {
+      // 点位球体
+      const pointGeo = new THREE.SphereGeometry(0.5, 16, 16);
+      const pointMat = new THREE.MeshLambertMaterial({ color: 0xff4500 });
+      const pointMesh = new THREE.Mesh(pointGeo, pointMat);
+      pointMesh.position.copy(pos);
+      scene.add(pointMesh);
+
+      // 点位文字标注
+      const label = document.createElement('div');
+      label.className = 'label';
+      label.textContent = name;
+      label.style.left = '0px';
+      label.style.top = '0px';
+      document.body.appendChild(label);
+
+      // 实时更新文字标注位置
+      const updateLabel = () => {
+        const vector = new THREE.Vector3(pos.x, pos.y + 1, pos.z); // 文字在球体上方
+        vector.project(camera);
+        vector.x = (vector.x * 0.5 + 0.5) * scene3dDom.clientWidth;
+        vector.y = -(vector.y * 0.5 - 0.5) * scene3dDom.clientHeight;
+        label.style.transform = `translate(${vector.x}px, ${vector.y}px)`;
+      };
+      // 加入动画循环更新位置
+      renderer.domElement.dataset.labelUpdate = updateLabel;
+    }
+
+    // 3D小车
+    const carGroup = new THREE.Group();
+    // 小车主体
+    const carBody = new THREE.Mesh(
+      new THREE.BoxGeometry(2, 1, 4),
+      new THREE.MeshLambertMaterial({ color: 0x1e90ff })
+    );
+    carBody.position.y = 0.5;
+    carGroup.add(carBody);
+    // 车轮
+    const wheelGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.5, 16);
+    const wheelMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
+    const frontLeftWheel = new THREE.Mesh(wheelGeo, wheelMat);
+    frontLeftWheel.rotation.z = Math.PI / 2;
+    frontLeftWheel.position.set(-1.2, 0, 1.5);
+    carGroup.add(frontLeftWheel);
+    const frontRightWheel = new THREE.Mesh(wheelGeo, wheelMat);
+    frontRightWheel.rotation.z = Math.PI / 2;
+    frontRightWheel.position.set(1.2, 0, 1.5);
+    carGroup.add(frontRightWheel);
+    const backLeftWheel = new THREE.Mesh(wheelGeo, wheelMat);
+    backLeftWheel.rotation.z = Math.PI / 2;
+    backLeftWheel.position.set(-1.2, 0, -1.5);
+    carGroup.add(backLeftWheel);
+    const backRightWheel = new THREE.Mesh(wheelGeo, wheelMat);
+    backRightWheel.rotation.z = Math.PI / 2;
+    backRightWheel.position.set(1.2, 0, -1.5);
+    carGroup.add(backRightWheel);
+
+    // 初始位置：上海
+    carGroup.position.copy(pointData.上海);
+    scene.add(carGroup);
+
+    // 移动逻辑
+    let targetPos = carGroup.position.clone();
+    let isMoving = false;
+    let rotateCar = false;
+
+    // 2D点击联动
+    mapChart.on('click', (params) => {
+      if (params.data?.name && pointData[params.data.name]) {
+        targetPos = pointData[params.data.name].clone();
+        isMoving = true;
+        rotateCar = true;
+
+        // 朝向目标方向
+        const direction = targetPos.clone().sub(carGroup.position).normalize();
+        const angle = Math.atan2(-direction.x, -direction.z);
+        carGroup.rotation.y = angle;
+      }
+    });
+
+    // 动画循环
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // 更新轨道控制阻尼
+      controls.update();
+
+      // 更新所有3D文字标注位置
+      const labelUpdates = renderer.domElement.dataset.labelUpdate;
+      if (labelUpdates) {
+        const updates = labelUpdates.split(',');
+        updates.forEach(update => {
+          if (typeof window[update] === 'function') window[update]();
+        });
+      }
+
+      // 小车移动逻辑
+      if (isMoving && rotateCar) {
+        frontLeftWheel.rotation.x += 0.2;
+        frontRightWheel.rotation.x += 0.2;
+        backLeftWheel.rotation.x += 0.2;
+        backRightWheel.rotation.x += 0.2;
+
+        // 平滑移动
+        const distance = carGroup.position.distanceTo(targetPos);
+        if (distance > 0.1) {
+          carGroup.position.lerp(targetPos, 0.05);
+        } else {
+          carGroup.position.copy(targetPos);
+          isMoving = false;
+          rotateCar = false;
+        }
+      }
+
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    //窗口自适应
+    window.addEventListener('resize', () => {
+      const width = scene3dDom.clientWidth;
+      const height = scene3dDom.clientHeight;
+      renderer.setSize(width, height);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      mapChart.resize();
+    });
+
+    console.log("✅ 物流轨迹2D+3D联动初始化完成！");
+  </script>
+</body>
+</html>
