@@ -171,6 +171,53 @@
     import * as THREE from 'three';
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
+    // ==================== Shader代码 ====================
+    const GLOW_VERTEX_SHADER = `
+      varying vec3 vNormal;
+      varying vec3 vPosition;
+      void main() {
+        vNormal = normalize(normalMatrix * normal);
+        vPosition = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `;
+    const GLOW_FRAGMENT_SHADER = `
+      uniform float uTime;
+      uniform float uGlowIntensity;
+      uniform vec3 uGlowColor;
+      varying vec3 vNormal;
+      varying vec3 vPosition;
+      void main() {
+        float fresnel = pow(1.0 - abs(dot(vNormal, vec3(0.0, 0.0, 1.0))), 2.0);
+        float pulse = 0.5 + 0.5 * sin(uTime * 3.0);
+        float glow = fresnel * uGlowIntensity * (0.8 + 0.2 * pulse);
+        gl_FragColor = vec4(uGlowColor * glow, glow);
+      }
+    `;
+    const SCAN_VERTEX_SHADER = `
+      varying vec2 vUv;
+      varying vec3 vWorldPosition;
+      void main() {
+        vUv = uv;
+        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+        vWorldPosition = worldPosition.xyz;
+        gl_Position = projectionMatrix * viewMatrix * worldPosition;
+      }
+    `;
+    const SCAN_FRAGMENT_SHADER = `
+      uniform float uTime;
+      uniform vec3 uBaseColor;
+      varying vec2 vUv;
+      varying vec3 vWorldPosition;
+      void main() {
+        float scanPos = fract(uTime * 1.5);
+        float dist = abs(vWorldPosition.y - (scanPos * 2.0 - 1.0));
+        float scan = 1.0 - smoothstep(0.0, 0.1, dist);
+        vec3 finalColor = mix(uBaseColor, vec3(1.0, 1.0, 1.0), scan);
+        gl_FragColor = vec4(finalColor, 1.0);
+      }
+    `;
+
     // ==================== 配置常量 ====================
     const CONFIG = {
       RENDER: { TARGET_FPS: 120, ENABLE_SHADOWS: false, ENABLE_ANTIALIAS: false },
@@ -409,14 +456,32 @@
       }
       _setupLights() { const ambientLight = new THREE.AmbientLight(0xffffff, 0.4); this.scene.add(ambientLight); const dirLight = new THREE.DirectionalLight(0xffffff, 0.8); dirLight.position.set(50, 50, 30); dirLight.castShadow = true; dirLight.shadow.mapSize.width = 2048; dirLight.shadow.mapSize.height = 2048; this.scene.add(dirLight); const fillLight = new THREE.DirectionalLight(0x6666ff, 0.3); fillLight.position.set(-30, 20, -30); this.scene.add(fillLight); }
       _setupEnvironment() { const gridHelper = new THREE.GridHelper(CONFIG.SCENE3D.GRID_SIZE, CONFIG.SCENE3D.GRID_DIVISIONS, 0x444444, 0x222222); this.scene.add(gridHelper); const planeGeo = new THREE.PlaneGeometry(200, 200); const planeMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a, transparent: true, opacity: 0.8 }); const plane = new THREE.Mesh(planeGeo, planeMat); plane.rotation.x = -Math.PI / 2; plane.position.y = -0.01; plane.receiveShadow = true; this.scene.add(plane); }
-      _createCityMarkers() { const sphereGeo = new THREE.SphereGeometry(0.5, 32, 32); const sphereMat = new THREE.MeshLambertMaterial({ color: 0xff4500 }); const pulseGeo = new THREE.SphereGeometry(0.5, 32, 32); const pulseMat = new THREE.MeshBasicMaterial({ color: 0xff4500, transparent: true, opacity: 0.5 }); Object.entries(CITIES).forEach(([name, data]) => { const pos = coordinateConverter.lngLatTo3D(...data.center); const mesh = new THREE.Mesh(sphereGeo, sphereMat); mesh.position.copy(pos); mesh.castShadow = true; mesh.userData = { cityName: name, isCity: true }; this.scene.add(mesh); this.cityMeshes.set(name, mesh); const pulse = new THREE.Mesh(pulseGeo, pulseMat); pulse.position.copy(pos); pulse.userData = { isPulse: true, baseScale: 1 }; this.scene.add(pulse); this._createCityLabel(name, pos); }); }
+      _createCityMarkers() { const sphereGeo = new THREE.SphereGeometry(0.5, 32, 32); const sphereMat = new THREE.MeshLambertMaterial({ color: 0xff4500 }); const pulseGeo = new THREE.SphereGeometry(0.5, 32, 32); const pulseMat = new THREE.MeshBasicMaterial({ color: 0xff4500, transparent: true, opacity: 0.5 }); const glowGeo = new THREE.SphereGeometry(0.6, 32, 32); const glowMat = new THREE.ShaderMaterial({ vertexShader: GLOW_VERTEX_SHADER, fragmentShader: GLOW_FRAGMENT_SHADER, uniforms: { uTime: { value: 0 }, uGlowIntensity: { value: 1.5 }, uGlowColor: { value: new THREE.Color(0xffaa00) } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }); Object.entries(CITIES).forEach(([name, data]) => { const pos = coordinateConverter.lngLatTo3D(...data.center); const mesh = new THREE.Mesh(sphereGeo, sphereMat); mesh.position.copy(pos); mesh.castShadow = false; mesh.userData = { cityName: name, isCity: true }; this.scene.add(mesh); this.cityMeshes.set(name, mesh); const pulse = new THREE.Mesh(pulseGeo, pulseMat); pulse.position.copy(pos); pulse.userData = { isPulse: true, baseScale: 1 }; this.scene.add(pulse); const glowMesh = new THREE.Mesh(glowGeo, glowMat.clone()); glowMesh.position.copy(pos); glowMesh.visible = false; glowMesh.userData = { isGlow: true, cityName: name }; this.scene.add(glowMesh); this._createCityLabel(name, pos); }); }
       _createCityLabel(cityName, position) { const label = document.createElement('div'); label.className = 'city-label'; label.textContent = cityName; label.style.position = 'absolute'; label.style.left = '0'; label.style.top = '0'; this.container.appendChild(label); this.cityLabels.set(cityName, label); const updateFn = () => { const pos = position.clone(); pos.y += 1.5; pos.project(this.camera); if (pos.z > 1) { label.style.display = 'none'; return; } const x = (pos.x * 0.5 + 0.5) * this.container.clientWidth; const y = (-(pos.y * 0.5 - 0.5) * this.container.clientHeight); label.style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`; label.style.display = 'block'; }; this.labelUpdateFns.push(updateFn); updateFn(); }
       _setupEventListeners() { window.addEventListener('resize', () => { const width = this.container.clientWidth; const height = this.container.clientHeight; this.camera.aspect = width / height; this.camera.updateProjectionMatrix(); this.renderer.setSize(width, height); }); const raycaster = new THREE.Raycaster(); const mouse = new THREE.Vector2(); this.renderer.domElement.addEventListener('click', (event) => { const rect = this.renderer.domElement.getBoundingClientRect(); mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1; mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1; raycaster.setFromCamera(mouse, this.camera); const cityMeshes = Array.from(this.cityMeshes.values()); const intersects = raycaster.intersectObjects(cityMeshes); if (intersects.length > 0) { const cityName = intersects[0].object.userData.cityName; if (this.onCityClick) this.onCityClick(cityName); } }); }
       _startRenderLoop() { this.animationLoop = AnimationUtils.createAnimationLoop((deltaTime) => { this._update(deltaTime); }, CONFIG.RENDER.TARGET_FPS); this.animationLoop.start(); }
-      _update(deltaTime) { try { this.controls.update(); const fps = this.fpsCounter.update(); if (fps > 0 && this.onFPSUpdate) this.onFPSUpdate(fps); this.labelUpdateFns.forEach(fn => fn()); this.scene.children.forEach(child => { if (child.userData.isPulse) { const time = Date.now() * 0.002; const scale = 1 + Math.sin(time) * 0.3; child.scale.setScalar(scale); child.material.opacity = 0.5 - (scale - 1) * 0.5; } }); this.vehicles.forEach(vehicle => { try { vehicle.update(deltaTime); if (vehicle.labelUpdateFn) vehicle.labelUpdateFn(); } catch (e) { console.error('车辆更新错误:', e); } }); this.renderer.render(this.scene, this.camera); } catch (error) { console.error('Scene3D._update 错误:', error); } }
+      _update(deltaTime) { try { this.controls.update(); const fps = this.fpsCounter.update(); if (fps > 0 && this.onFPSUpdate) this.onFPSUpdate(fps); this.labelUpdateFns.forEach(fn => fn()); const time = Date.now() * 0.001; this.scene.children.forEach(child => {
+          if (child.userData.isPulse) {
+            const scale = 1 + Math.sin(time * 2) * 0.3;
+            child.scale.setScalar(scale);
+            child.material.opacity = 0.5 - (scale - 1) * 0.5;
+          }
+          if (child.userData.isGlow && child.visible && child.material.uniforms) {
+            child.material.uniforms.uTime.value = time;
+          }
+        });
+        this.vehicles.forEach(vehicle => {
+          try {
+            vehicle.update(deltaTime);
+            if (vehicle.labelUpdateFn) vehicle.labelUpdateFn();
+          } catch (e) { console.error('车辆更新错误:', e); }
+        });
+        this.renderer.render(this.scene, this.camera);
+      } catch (error) { console.error('Scene3D._update 错误:', error); }
+    }
       addVehicle(vehicle) { this.vehicles.set(vehicle.id, vehicle); if (vehicle.mesh && !this.scene.children.includes(vehicle.mesh)) this.scene.add(vehicle.mesh); }
       getCityPosition(cityName) { const city = CITIES[cityName]; return city ? coordinateConverter.lngLatTo3D(...city.center) : null; }
-      highlightCity(cityName) { const mesh = this.cityMeshes.get(cityName); if (mesh) { mesh.material.emissive = new THREE.Color(0xff0000); mesh.material.emissiveIntensity = 0.5; setTimeout(() => { mesh.material.emissive = new THREE.Color(0x000000); mesh.material.emissiveIntensity = 0; }, 1000); } }
+      highlightCity(cityName) { this.scene.children.forEach(child => { if (child.userData.isGlow && child.userData.cityName === cityName) { child.visible = true; setTimeout(() => { child.visible = false; }, 2000); } }); }
       dispose() { if (this.animationLoop) this.animationLoop.stop(); this.vehicles.forEach(vehicle => vehicle.dispose()); this.vehicles.clear(); this.cityLabels.forEach(label => label.remove()); this.cityLabels.clear(); this.scene.traverse(child => { if (child.geometry) child.geometry.dispose(); if (child.material) { if (Array.isArray(child.material)) child.material.forEach(mat => mat.dispose()); else child.material.dispose(); } }); this.renderer.dispose(); this.container.removeChild(this.renderer.domElement); }
     }
 
@@ -426,7 +491,34 @@
         this.id = id; this.scene = scene; this.type = options.type || 'TRUCK'; this.config = VEHICLE_TYPES[this.type]; this.status = STATUS.IDLE; this.currentCity = cityName; this.targetCity = null; this.path = []; this.pathIndex = 0; this.speed = options.speed || CONFIG.VEHICLE.DEFAULT_SPEED; this.currentSpeed = 0; this.maxSpeed = CONFIG.VEHICLE.MAX_SPEED; this.mesh = null; this.wheels = []; this.label = null; this.labelUpdateFn = null; this.onStatusChange = null; this.onPositionUpdate = null; this.onArrive = null; this.idleTimeoutId = null; this._createModel(); this._createLabel(); if (this.scene && this.mesh) this.scene.add(this.mesh);
       }
       _createModel() {
-        this.mesh = new THREE.Group(); const [width, height, length] = this.config.size; const bodyGeo = new THREE.BoxGeometry(width, height, length); const bodyMat = new THREE.MeshLambertMaterial({ color: this.config.color }); const body = new THREE.Mesh(bodyGeo, bodyMat); body.position.y = height / 2; body.castShadow = true; this.mesh.add(body); const cabGeo = new THREE.BoxGeometry(width * 0.8, height * 0.6, length * 0.3); const cabMat = new THREE.MeshLambertMaterial({ color: 0x333333 }); const cab = new THREE.Mesh(cabGeo, cabMat); cab.position.set(0, height + height * 0.3, length * 0.35); cab.castShadow = true; this.mesh.add(cab); const wheelRadius = 0.3; const wheelWidth = 0.3; const wheelGeo = new THREE.CylinderGeometry(wheelRadius, wheelRadius, wheelWidth, 16); const wheelMat = new THREE.MeshLambertMaterial({ color: 0x333333 }); const wheelPositions = [[-width / 2 - 0.1, wheelRadius, length * 0.3], [width / 2 + 0.1, wheelRadius, length * 0.3], [-width / 2 - 0.1, wheelRadius, -length * 0.3], [width / 2 + 0.1, wheelRadius, -length * 0.3]]; wheelPositions.forEach(pos => { const wheel = new THREE.Mesh(wheelGeo, wheelMat); wheel.rotation.z = Math.PI / 2; wheel.position.set(...pos); wheel.castShadow = true; this.mesh.add(wheel); this.wheels.push(wheel); }); const lightGeo = new THREE.BoxGeometry(0.2, 0.1, 0.05); const lightMat = new THREE.MeshBasicMaterial({ color: 0xffff00 }); const leftLight = new THREE.Mesh(lightGeo, lightMat); leftLight.position.set(-width * 0.3, height * 0.7, length / 2 + 0.02); this.mesh.add(leftLight); const rightLight = new THREE.Mesh(lightGeo, lightMat); rightLight.position.set(width * 0.3, height * 0.7, length / 2 + 0.02); this.mesh.add(rightLight); this.scene.add(this.mesh);
+        this.mesh = new THREE.Group(); const [width, height, length] = this.config.size;
+        const bodyGeo = new THREE.BoxGeometry(width, height, length);
+        const bodyMat = new THREE.MeshLambertMaterial({ color: this.config.color });
+        const body = new THREE.Mesh(bodyGeo, bodyMat);
+        body.position.y = height / 2;
+        body.castShadow = false;
+        this.mesh.add(body);
+        const cabGeo = new THREE.BoxGeometry(width * 0.8, height * 0.6, length * 0.3);
+        const cabMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
+        const cab = new THREE.Mesh(cabGeo, cabMat);
+        cab.position.set(0, height + height * 0.3, length * 0.35);
+        cab.castShadow = false;
+        this.mesh.add(cab);
+        const wheelRadius = 0.3; const wheelWidth = 0.3;
+        const wheelGeo = new THREE.CylinderGeometry(wheelRadius, wheelRadius, wheelWidth, 16);
+        const wheelMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
+        const wheelPositions = [[-width / 2 - 0.1, wheelRadius, length * 0.3], [width / 2 + 0.1, wheelRadius, length * 0.3], [-width / 2 - 0.1, wheelRadius, -length * 0.3], [width / 2 + 0.1, wheelRadius, -length * 0.3]];
+        wheelPositions.forEach(pos => { const wheel = new THREE.Mesh(wheelGeo, wheelMat); wheel.rotation.z = Math.PI / 2; wheel.position.set(...pos); wheel.castShadow = false; this.mesh.add(wheel); this.wheels.push(wheel); });
+        const lightGeo = new THREE.BoxGeometry(0.2, 0.1, 0.05);
+        const lightMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+        const leftLight = new THREE.Mesh(lightGeo, lightMat);
+        leftLight.position.set(-width * 0.3, height * 0.7, length / 2 + 0.02);
+        this.mesh.add(leftLight);
+        const rightLight = new THREE.Mesh(lightGeo, lightMat);
+        rightLight.position.set(width * 0.3, height * 0.7, length / 2 + 0.02);
+        this.mesh.add(rightLight);
+        this.mesh.userData = { isVehicle: true, vehicleId: this.id };
+        this.scene.add(this.mesh);
       }
       _createLabel() { this.label = document.createElement('div'); this.label.className = 'vehicle-label'; this.label.innerHTML = `<div class="label-name">车辆 ${this.id}</div><div class="label-status">${this.status}</div>`; const container = document.getElementById('scene3d'); if (container) container.appendChild(this.label); else document.body.appendChild(this.label); this.labelUpdateFn = () => { if (!this.mesh) return; const container = document.getElementById('scene3d'); if (!container) return; const pos = this.mesh.position.clone(); pos.y += 2; pos.project(window.app.scene3d.camera); const x = (pos.x * 0.5 + 0.5) * container.clientWidth; const y = (-(pos.y * 0.5 - 0.5) * container.clientHeight); this.label.style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`; this.label.style.display = pos.z < 1 ? 'block' : 'none'; }; }
       moveTo(cityName, targetPos) { if (this.status === STATUS.MOVING) return; if (this.idleTimeoutId) { clearTimeout(this.idleTimeoutId); this.idleTimeoutId = null; } this.targetCity = cityName; this.targetPos = targetPos.clone(); this.status = STATUS.MOVING; this.currentSpeed = this.speed; const direction = this.targetPos.clone().sub(this.mesh.position).normalize(); const angle = Math.atan2(direction.x, direction.z); this.mesh.rotation.y = angle; this._updateLabel(); if (this.onStatusChange) this.onStatusChange(this.status); }
